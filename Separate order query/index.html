@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <!-- import CSS -->
+  <link rel="stylesheet" href="./css/unpkg.com_element-ui@2.15.14_lib_theme-chalk_index.css">
+  <!-- <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/fonts/element-icons.woff"> -->
+  <script src="./js/xlsx.core.min.js"></script>
+</head>
+<body>
+  <div id="app">
+  <el-button @click="selectFile">导入</el-button>
+  <el-button @click="exFile">导出</el-button>
+  <el-button @click="seYuan" >导入元数据</el-button>
+  <el-button @click="exYuan">导出元数据</el-button>
+  <input type="file" ref='ipt' id="file" @change="readWorkbookFromLocalFile" style="display:none;" accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+  <input type="file" ref='ysj' id="yfile" @change="readYuan" style="display:none;" multiple="multiple" >
+  
+  <el-table
+   :height="TableHeight"
+   :row-class-name="tableRowClassName"
+   :data="filteredData"
+   border
+   v-loading="loading"
+    style="width: 100%">
+	    <el-table-column
+      label="序号"
+      prop="index"
+	  width="60px"
+    align="center"
+      >
+    </el-table-column>
+    <el-table-column
+      label="运单号"
+	  width="150px"
+    align="center"
+      prop="id">
+    </el-table-column>
+	 <el-table-column
+      label="时间"
+      align="center"
+      prop="date">
+    </el-table-column>
+    <el-table-column
+      label="省"
+      align="center"
+      prop="province">
+    </el-table-column>
+    <el-table-column
+      label="市"
+      align="center"
+      prop="market">
+    </el-table-column>
+	<el-table-column
+      label="区"
+      align="center"
+      prop="area">
+    </el-table-column>
+    <el-table-column
+      label="收货人"
+      align="center"
+      prop="consignee">
+    </el-table-column>
+    <el-table-column
+      label="店铺"
+      align="center"
+      prop="name">
+    </el-table-column>
+	<el-table-column
+      label="业务员"
+      align="center"
+      prop="salesman">
+    </el-table-column>
+	<el-table-column
+      label="运单运费"
+      align="center"
+      prop="money">
+	   </el-table-column>
+	  <el-table-column
+      label="计费重量"
+      align="center"
+      prop="weight">
+    </el-table-column>
+    <el-table-column
+    label="综合重量"
+    align="center"
+    prop="totalWeight">
+    <template slot-scope="scope">
+      <el-tag v-if="scope.row.totalWeight!=null" type="danger">{{scope.row.totalWeight}}</el-tag>
+    </template>
+  </el-table-column>
+  <el-table-column
+      label="备注"
+      align="center"
+      prop="ps">
+      <template slot-scope="scope">
+        <p style="font-weight: bold;cursor: pointer;" @click="psedit(scope.$index, scope.row)" v-if="scope.row.ps!=null">{{scope.row.ps}}</p>
+        <!-- <el-button type="primary" v-if="scope.row.ps==''" icon="el-icon-edit"  circle></el-button> -->
+        <el-link  v-if="scope.row.ps=='' && scope.row.totalWeight!=null" @click="psedit(scope.$index, scope.row)"  icon="el-icon-edit">编辑</el-link>
+      </template>
+    
+    </el-table-column>
+    <el-table-column
+      align="right">
+	  
+      <template slot="header" slot-scope="scope">
+        <el-input
+          v-model="search1"
+          size="mini"
+          @keyup.enter.native="searchFun"
+          placeholder="输入关键字搜索"/>
+      </template>
+      <template v-if="scope.row.totalWeight!=null" slot-scope="scope">
+        <i style="font-size: 20px;" class="el-icon-user-solid"></i>
+      </template>
+    </el-table-column>
+  </el-table>
+          <div class="block" style="margin-top:15px;">
+            <el-pagination align='center' @size-change="handleSizeChange" @current-change="handleCurrentChange" 
+            :current-page="currentPage" 
+            :page-sizes="[1,5,10,20]" 
+            :page-size="pageSize" 
+            layout="total, sizes, prev, pager, next, jumper" 
+            :total="tableData.length">
+            </el-pagination>
+  </div>
+  </div>
+</body>
+<style>
+  .el-table__row.group-color-0 {
+    background: oldlace; /* 设置背景颜色1 */
+
+}
+
+.el-table__row.group-color-1 {
+  background: #f0f9eb; /* 设置背景颜色2 */
+}
+.el-table__row.group-color-2 {
+  background: #f0d93e; /* 设置背景颜色2 */
+}
+</style>
+
+  <!-- import Vue before Element -->
+  <script src="./js/vue.js"></script>
+  <!-- import JavaScript -->
+  <script src="./js/unpkg.com_element-ui@2.15.14_lib_index.js"></script>
+  <script>
+    new Vue({
+      el: '#app',
+      data: function() {
+        return {  tableData: [],
+        search: '',
+        search1:'',
+		loading: false,
+		TableHeight:0,
+		 total:0,//默认数据总数
+         pageSize:20,//每页的数据条数
+         currentPage:1,//默认开始页面
+		}
+      },
+	  created() {
+		//动态计算表格高度
+		let windowHeight = document.documentElement.clientHeight || document.bodyclientHeight;
+		this.TableHeight = windowHeight - 140;//数值"140"根据需要调整
+	},
+      mounted(){
+         
+         this.tableData = JSON.parse(localStorage.getItem("sortarr")) ;
+         console.log(this.tableData)
+         this.total = this.tableData.length;
+		   var cur = localStorage.getItem('currentPage');
+		 this.currentPage = cur!=undefined ? parseInt(cur) : 1;
+        
+      },
+      computed: {
+  // 计算属性，每当搜索关键字或原始数据变化时自动执行
+      filteredData() {
+        
+        // 如果没有搜索条件，则显示所有数据
+        if (!this.search) {
+          return this.tableData.slice((this.currentPage-1)*this.pageSize,this.currentPage*this.pageSize)
+        }
+      
+        // 将搜索条件转换为小写字母，方便进行大小写不敏感的比较
+        const searchLower =  this.search.toLowerCase().trim();
+        
+        // 找到所有 ID 包含搜索关键字的数据
+        const matchedElements = this.tableData.filter(item =>
+          item.id.toLowerCase().includes(searchLower)
+        );
+        // 如果没有匹配的数据，则返回空数组
+        if (matchedElements.length === 0) {
+          return [];
+        }
+
+        // 找到所有具有相同 UUID 的数据
+        const firstMatch = matchedElements[0];
+        const uuidToMatch = firstMatch.uid;
+
+        // 返回具有相同 UUID 的所有数据
+	
+        return this.tableData.filter(item => item.uid === uuidToMatch).slice((this.currentPage-1)*this.pageSize,this.currentPage*this.pageSize);
+      }
+    },
+	   methods: {
+	   readYuan(obj){
+	     var fileList = this.$refs.ysj.files;
+		 var ahis = this;
+		 var nameStr = '';
+		for (var i = 0; i < fileList.length; i++) {
+			nameStr += `${i === 0 ? '' : ', '}${fileList[i].name}`;
+			var reader = new FileReader();
+			reader.readAsText(fileList[i], "UTF-8");
+			reader.onload = function (e) {
+				var content = e.target.result;
+				console.log(content);
+				ahis.tableData = JSON.parse(content) ;
+				localStorage.setItem("sortarr",content)
+			}
+		}
+		
+
+	   },
+	   seYuan(){
+		 document.getElementById('yfile').click();
+	   },
+	   exYuan(){
+		 var value = localStorage.getItem("sortarr");
+		 console.log(value)
+		 
+		  let a = document.createElement('a');
+			a.href = 'data:text/plain;charset=utf-8,' + value
+			a.download = "分单备份"
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+	   },
+      exFile(){
+        var values = this.tableData;
+        values = values.filter(item=>{
+          return item.ps !='' && item.ps!='正常';
+        })
+		var lists = [];
+		for(var i = 0; i < values.length; i++){
+		   var arr = this.tableData.filter(e=>{
+		      return e.uid == values[i].uid;
+		   });
+		   for(var j = 0; j < arr.length; j++){
+		      lists.push(arr[j])  
+		   }
+		   
+		}
+        console.log('这里',lists)
+        const excelData = lists.map(record => [
+            record.id,
+            record.money,
+            record.name,
+            record.salesman,
+            record.weight,
+            record.date,
+            record.province,
+            record.market,
+            record.area,
+            record.consignee,
+			record.totalWeight,
+            record.ps
+        ]);
+
+// 添加表头
+const header = ["ID", "金额", "姓名", "销售员", "重量", "日期", "省份", "市场", "区域", "收货人",'总重量', "备注"];
+excelData.unshift(header);
+        this.exportToExcel(excelData, 'example.xlsx', 'Sheet1');
+      },
+      exportToExcel(data, fileName = 'export.xlsx', sheetName = 'Sheet1') {
+        // 创建 Workbook 对象
+        const workbook = XLSX.utils.book_new();
+
+        // 创建 Worksheet 对象
+        const worksheet = XLSX.utils.aoa_to_sheet(data);
+
+        // 将 Worksheet 添加到 Workbook 中
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+        // 将 Workbook 对象转换为二进制数据流
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+
+        // 创建 Blob 对象
+        const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
+
+        // 创建下载链接
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = fileName;
+
+        // 模拟点击下载链接
+        link.click();
+
+        // 释放资源
+        window.URL.revokeObjectURL(link.href);
+      }
+,
+        saveAs(blob, fileName) {
+        // 检查浏览器是否支持 saveAs 方法
+        if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+          // For IE and Edge
+          window.navigator.msSaveOrOpenBlob(blob, fileName);
+        } else {
+          // For other browsers
+          const link = document.createElement('a');
+          link.href = window.URL.createObjectURL(blob);
+          link.download = fileName;
+          link.click();
+        }
+      },
+      searchFun(){
+        this.search = this.search1;
+        this.currentPage = 1;
+					localStorage.setItem('currentPage',1)
+      },
+	   //切换页面
+	    handleSizeChange(val) {
+                    console.log(`每页 ${val} 条`);
+                    this.currentPage = 1;
+					localStorage.setItem('currentPage',1)
+                    this.pageSize = val;
+                },
+                //当前页改变时触发 跳转其他页
+                handleCurrentChange(val) {
+                    console.log(`当前页: ${val}`);
+                    this.currentPage = val;
+					localStorage.setItem('currentPage',val)
+                },
+
+       uuid() {
+
+          var s = [];
+
+          var hexDigits = "0123456789abcdef";
+
+          for (var i = 0; i < 36; i++) {
+
+              s[i] = hexDigits.substr(Math.floor(Math.random() * 0x10), 1);
+
+          }
+
+          s[14] = "4";  // bits 12-15 of the time_hi_and_version field to 0010
+
+          s[19] = hexDigits.substr((s[19] & 0x3) | 0x8, 1);  // bits 6-7 of the clock_seq_hi_and_reserved to 01
+
+          s[8] = s[13] = s[18] = s[23] = "-";
+
+
+
+          var uuid = s.join("");
+
+          return uuid;
+
+          },
+      //改变颜色
+      tableRowClassName({ row }) {
+        // 返回该行的颜色类名
+        return row.colorClass;
+      },
+      //排序
+      sort(data) {
+	  
+  // 先排序
+        data.sort((a, b) => { 
+		if (a.area == undefined) return 0;
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+		 if (a.area !== b.area) return a.area.localeCompare(b.area);
+          if (a.province !== b.province) return a.province.localeCompare(b.province);
+          if (a.market !== b.market) return a.market.localeCompare(b.market);
+          if (a.consignee !== b.consignee) return a.consignee.localeCompare(b.consignee);
+          return a.name.localeCompare(b.name);
+        });
+
+        // 分组并为每个分组分配颜色类名
+        const groupedData = data.reduce((acc, cur) => {
+          const key = `${cur.province}-${cur.market}-${cur.consignee}-${cur.area}-${cur.date}-${cur.name}`;
+          if (!acc[key]) {
+            acc[key] = { colorClass: `group-color-${Object.keys(acc).length % 2}`, items: [], totalWeight: 0 }; // 添加 totalWeight 属性
+          }
+          acc[key].items.push(cur);
+          acc[key].totalWeight += parseFloat(cur.weight) ; // 累加 weight
+          return acc;
+        }, {});
+        // 过滤只有一个元素的分组
+        for (const key in groupedData) {
+          if (groupedData.hasOwnProperty(key)) {
+            const group = groupedData[key];
+            if (group.items.length === 1 && group.items[0].weight<=2) {
+              delete groupedData[key]; // 删除只有一个元素的分组
+            }
+          }
+        }
+
+        // 重新为剩余的分组分配颜色类名
+        let index = 0;
+        for (const key in groupedData) {
+          if (groupedData.hasOwnProperty(key)) {
+            groupedData[key].colorClass = `group-color-${index % 2}`;
+            index++;
+          }
+        }
+        // 将分组按照时间排序
+        const sortedGroups = Object.values(groupedData).sort((a, b) => {
+          // 使用时间字段进行排序，假设时间字段为 date
+          return new Date(a.items[0].date) - new Date(b.items[0].date);
+        });
+
+        // 重新构建按照时间排序后的 groupedData 对象
+        const sortedGroupedData = {};
+        sortedGroups.forEach((group, i) => {
+          sortedGroupedData[`group-${i}`] = group;
+        });
+        // 将生成的 tableData 赋值给组件中的 tableData
+        let tableData = [];
+        var ahis = this;
+        Object.values(sortedGroupedData).forEach(group => {
+          const totalWeight = group.totalWeight; // 获取分组的总和
+          var uid = ahis.uuid();
+		
+          group.items.forEach((item, index) => {
+            item.uid = uid;
+			
+            // 在每个分组的第一个元素中添加属性 totalWeight
+            if (index === 0) {
+              item.totalWeight = totalWeight.toFixed(2);
+            } else {
+              // 在其他元素中删除 totalWeight 属性
+              delete item.totalWeight;
+            }
+            // 将颜色类名添加到每个行数据中
+            item.colorClass = group.colorClass;
+            tableData.push(item);
+          });
+        });
+        // tableData.sort((a,b)=>{
+        //   const dateA = new Date(a.date);
+        //   const dateB = new Date(b.date);
+        //   return dateA - dateB;
+        // })
+        // 将生成的 tableData 赋值给组件中的 tableData
+        this.reload(tableData);
+		//this.tableData = tableData;
+        //localStorage.setItem("sortarr",JSON.stringify(this.tableData))
+		//this.total = this.tableData.size;
+      },
+	  reload(data){
+	    this.tableData = data;
+      for(let i = 0; i < this.tableData.length;i++){
+          this.tableData[i].index = i+1;
+      }
+        localStorage.setItem("sortarr",JSON.stringify(data))
+		this.total = data.size;
+		localStorage.setItem('currentPage',1)
+		window.location.reload()
+	  },
+	   //导入excel
+	   selectFile(){
+		document.getElementById('file').click();
+	   },
+	   readWorkbookFromLocalFile(obj) {
+	   var obj = this.$refs.ipt;
+
+		 if (obj.size == 0) {
+			return;
+		}
+		var ahis = this;
+		var f = obj.files[0];
+		var reader = new FileReader();
+		reader.onload = function (e) {
+			data = e.target.result;
+			wb = XLSX.read(data, {
+				type: 'binary'
+			});
+			var a = wb.SheetNames[0];
+			var b = wb.Sheets[a];//内容为方式2
+			data = XLSX.utils.sheet_to_json(b);//内容为方式1
+			if (!data || data == "") {
+				alert("文件内容为空!");
+				return;
+			}
+		//在这里执行对解析后数据的处理
+		ResidentInfo = [];
+		for (var j = 0; j < data.length; j++) {
+			var obj = {
+				id: data[j].运单编号,
+				money: data[j].运单运费,
+				name: data[j].客户名称,
+				salesman: data[j].揽件业务员,
+				weight: data[j].计费重量,
+				date:data[j].寄件时间,
+        province:data[j].收件省份,
+        market:data[j].收件城市,
+		area:data[j].收件区域,
+        consignee:data[j].收件人姓名,
+		ps:'',
+			}
+			ResidentInfo.push(obj);
+		}
+	ahis.loading = true;
+    ahis.sort(ResidentInfo);
+	ahis.loading = true;
+	}
+	reader.readAsBinaryString(f);
+	},
+      handleEdit(index, row) {
+        console.log(index, row);
+      },
+      psedit(index, row) {
+        this.$prompt('请输入备注', '提示', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          inputValue:"正常",
+        }).then(({ value }) => {
+          row.ps = value; 
+          console.log(this.tableData)
+          localStorage.setItem("sortarr",JSON.stringify(this.tableData))
+        }).catch(() => {
+          this.$message({
+            type: 'info',
+            message: '取消输入'
+          });       
+        });
+      }
+    },
+    })
+  </script>
+</html>
+
